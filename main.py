@@ -1,14 +1,3 @@
-"""
-base outline of the algorithm:
-in a loop:
-  sample 750 random 1-returns
-  convert to 740 10-returns
-  compute 1%-percentile
-  add 1%-percentile to a set
-  compute mean and standard dev. estimates of the set
-    and use them to check if Monte Carlo simulation should stop
-  exit loop if stop
-"""
 from typing import Callable, List, NamedTuple, Tuple, Any, Dict
 import math
 import numpy as np
@@ -153,9 +142,12 @@ def check_representativeness(samples: Array, n_tests=100, level=0.1, ks2_thr=0.0
     Main criteria is setting threshold for Two-sample Kolmogorov–Smirnov test's ``D`` value.
     Setting it you can select desired smoothness of the generated distribution.
 
-    pvalues returned by scipy are only used in ad-hockish way to make sure that distribution of
+    pvalues returned by scipy were only used in ad-hockish way to make sure that distribution of
     ``D`` from ``n_tests`` partition tests follows two-sided Kolmogorov-Smirnov statistic.
-    I only check ``soft_level``-quantile a bit.
+    I only check ``soft_level``-quantile a bit. And it turned out that even for small sized samples
+    (like 50 vs. 50 partitions) ``soft_level``-quantile matches portion of rejected pvalues
+    (see below for more details). Hence in practice only ``D`` value threshold matters as
+    pvalues returned from ``scipy.stats.kstest`` do not help to check if the sample is representative.
 
     -----------------------------------------------------------------------------------
 
@@ -178,7 +170,7 @@ def check_representativeness(samples: Array, n_tests=100, level=0.1, ks2_thr=0.0
     would encounter pvalue < 0.01. But most of the values would be high enough.
 
     Actually in practice when F = G if we select significance level as 0.1 then approximately
-    10% of partition checks pvalues be below 0.1. Same is for 0.2. That is correct as
+    10% of partition checks pvalues would be below 0.1. Same is for 0.2. That is correct as
     when F = G the distribution of D follows statistic from which pvalues are taken.
 
     :param samples: samples
@@ -331,17 +323,12 @@ def mc_generate_quantile_dist(sampler: Callable[[], Tuple[Array, tuple]]=get_sam
         q_samples.append(float(np.quantile(smpl, quantile)))
 
     n = n_trials_min
-    q_samples_ = np.array(q_samples)
-    # mean estimation of quantile samples:
-    mu = float(np.sum(q_samples_) / n)
 
     for i in range(n_trials_max - n_trials_min):
         smpl, sampler_info = sampler()
         q = float(np.quantile(smpl, quantile))
         q_samples.append(q)
 
-        mu_next = mu + (q - mu) / (n + 1)
-        mu = mu_next
         n += 1
 
         if n % represntv_check_freq == 0:
@@ -353,11 +340,16 @@ def mc_generate_quantile_dist(sampler: Callable[[], Tuple[Array, tuple]]=get_sam
     else:  # max limit of trials was exceeded
         success = False
 
+    q_samples_ = np.array(q_samples)
+    # mean estimation of quantile samples:
+    mu = float(np.sum(q_samples_) / n)
     return ReturnMCGenQ(mu=mu, success=success, quantile=quantile, n=n,
                         sampler_info=sampler_info, represntv_return=repr_ret), q_samples
 
 
 # %%
+# Problem B
+# --------------------------
 ret2, quantile_samples2 = mc_generate_quantile_dist()
 print(ret2)
 
@@ -368,6 +360,8 @@ plot_distribution(quantile_samples_2, xlabel=f'MC trials of {ret2.quantile}-quan
 
 
 # %%
+# Problem A
+# --------------------------
 ret1, quantile_samples1 = mc_compute_quantile()
 print(ret1)
 
